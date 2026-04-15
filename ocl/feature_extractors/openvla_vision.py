@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 import logging
-
 # 복사해온 prismatic 모듈에서 팩토리 함수를 임포트합니다.
 from prismatic.models.materialize import get_vision_backbone_and_transform
 
@@ -74,3 +73,21 @@ class OpenVLAVisionExtractor(nn.Module):
     def get_transform(self):
         """이 함수가 반환하는 transform을 데이터셋 전처리에 사용합니다."""
         return self.image_transform
+
+
+from ocl.utils.routing import RoutableMixin
+
+class RoutedOpenVLAVisionExtractor(OpenVLAVisionExtractor, RoutableMixin):
+    """
+    RoutableMixin을 다중 상속받아 ctrl-o의 동적 데이터 라우팅을 지원하는 클래스입니다.
+    """
+    def __init__(self, input_mapping=None, **kwargs):
+        # 1. 원본 OpenVLA 인코더 초기화
+        OpenVLAVisionExtractor.__init__(self, **kwargs)
+        # 2. 라우팅 시스템 초기화 (YAML에서 넘겨주는 input_mapping을 연결)
+        RoutableMixin.__init__(self, input_mapping if input_mapping is not None else {})
+
+    @RoutableMixin.route
+    def forward(self, *args, **kwargs):
+        # 라우팅된 데이터가 들어오면 부모 클래스의 forward로 넘겨줍니다.
+        return super().forward(*args, **kwargs)

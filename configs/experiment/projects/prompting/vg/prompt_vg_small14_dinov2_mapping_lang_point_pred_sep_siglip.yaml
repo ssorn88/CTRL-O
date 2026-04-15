@@ -1,5 +1,5 @@
 # @package _global_
-# DINOSAUR with ViT-S/14 and DINOv2 weights.
+# DINOSAUR with ViT-S/14 and DINOv2 weights -> (Modified to SigLIP / OpenVLA Vision Encoder)
 defaults:
   - /experiment/projects/prompting/_base_prompting_dinosaur
   - /dataset: vg_siglip
@@ -14,27 +14,39 @@ experiment:
   timm_model: vit_small_patch14_dinov2.lvd142m
   mapping_lr: "${mul: 0.1, ${.total_lr}}"
   batch_size_per_gpu: 128
+  feature_dim: 1152 # SigLIP SO-400M의 출력 차원으로 지정 (기존 DINOv2는 384였음)
+  num_patches: 256
 
 models:
+  # =========================================================
+  # 1. Feature Extractor를 우리가 만든 OpenVLA(SigLIP) 래퍼로 교체
+  # =========================================================
   feature_extractor:
-    dynamic_img_size: true
+    _target_: ocl.feature_extractors.openvla_vision.RoutedOpenVLAVisionExtractor
+    vision_backbone_id: "siglip-vit-so400m"
+    image_resize_strategy: "resize-naive"
+    freeze: true
+    input_mapping:
+      images: "image"
 
   mapping:
     _target_: routed.ocl.mapping.MLPMapping
-    dim: ${experiment.feature_dim}
+    dim: ${experiment.feature_dim} # 1152
     x_path: feature_extractor
 
-
+  # =========================================================
+  # 2. LLaMA-3 언어 임베딩 차원을 1152에서 4096으로 변경
+  # =========================================================
   conditioning:
     _target_: routed.ocl.conditioning.LangConditioning
     n_slots: ${experiment.num_slots}
     object_dim: ${experiment.slot_dim}
-    lang_dim: 1152
+    lang_dim: 4096 # 수정됨 (LLaMA-3 차원)
     dual_conditioning: false
     name_embedding_path: input.name_embedding
     batch_size_path: input.batch_size
     mask_path: input.contrastive_loss_mask
-  
+
   perceptual_grouping:
     _target_: routed.ocl.perceptual_grouping.SlotAttentionGrouping
     feature_dim: ${.object_dim}
@@ -58,7 +70,7 @@ models:
       residual: true
     feature_path: mapping
     conditioning_path: conditioning
-  
+
   attn_aggregation:
     _target_: routed.ocl.heads.AttentionAggregationHead
     dim: ${experiment.feature_dim}
@@ -68,24 +80,24 @@ models:
   projector_slots:
     _target_: routed.ocl.heads.SlotProjectorHead
     dim: ${experiment.feature_dim}
-    embedding_dim: 1152
+    embedding_dim: 4096 # 수정됨 (언어 임베딩과 대조하기 위해 4096으로 맞춤)
     slots_path: attn_aggregation
 
   lang_embedding:
     _target_: routed.ocl.heads.LangEmbeddingHead
-    embedding_dim: 1152
-    lang_dim: 1152
+    embedding_dim: 4096 # 수정됨 (최종 임베딩 차원)
+    lang_dim: 4096 # 수정됨 (LLaMA-3 입력 차원)
     name_embedding_path: input.name_embedding
 
   point_embedding:
     _target_: routed.ocl.heads.PointEmbeddingHead
-    embedding_dim: 1152
+    embedding_dim: 4096 # 수정됨 (slots의 embedding_dim과 맞춤)
     point_embedding_path: input.bbox_centroids
 
   dec_conditioning:
     _target_: routed.ocl.decoder_conditioning.EncodeLangConditioning
     dim: ${experiment.slot_dim}
-    lang_dim: 1152
+    lang_dim: 4096 # 수정됨 (LLaMA-3 차원)
     language_path: input.name_embedding
     mask_path: input.contrastive_loss_mask
 
@@ -113,7 +125,7 @@ optimizers:
       _target_: ocl.optimization.ParameterGroupCreator
       param_groups:
         grouping:
-          params: [models.perceptual_grouping, models.conditioning, 
+          params: [models.perceptual_grouping, models.conditioning,
                    models.object_decoder, models.dec_conditioning]
           lr: ${experiment.total_lr}
           weight_decay: 0.0
@@ -151,7 +163,7 @@ visualizations:
     n_instances: 32
     denormalization:
       _target_: ocl.preprocessing.Denormalize
-      mean: [0.485, 0.456, 0.406]
+      mean: [0.485, 0.456, 0.406] # (참고: SigLIP의 경우 정규화 수치가 다를 수 있으나, 시각화에만 영향을 주므로 일단 유지합니다.)
       std: [0.229, 0.224, 0.225]
     image_path: input.image
   masks:
@@ -179,7 +191,7 @@ visualizations:
     text_path: input.name
     bbox_centroids_path: input.all_bbox_centroids
 
-evaluation_metrics: 
+evaluation_metrics:
   acc_sc:
     _target_: routed.ocl.metrics.acc.EmbAccMetric
     mode: sc
@@ -192,7 +204,6 @@ evaluation_metrics:
     slot_emb_path: projector_slots
     ctrl_emb_path: lang_embedding
     mask_idx_path: input.contrastive_loss_mask
-
   acc_avg:
     _target_: routed.ocl.metrics.acc.EmbAccMetric
     mode: average
@@ -207,16 +218,12 @@ training_metrics:
     slot_emb_path: projector_slots
     ctrl_emb_path: lang_embedding
     mask_idx_path: input.contrastive_loss_mask
-
-
   acc_cs:
     _target_: routed.ocl.metrics.acc.EmbAccMetric
     mode: cs
     slot_emb_path: projector_slots
     ctrl_emb_path: lang_embedding
     mask_idx_path: input.contrastive_loss_mask
-
-
   acc_avg:
     _target_: routed.ocl.metrics.acc.EmbAccMetric
     mode: average
