@@ -46,18 +46,15 @@ class OpenVLASigLIPFeatureExtractor(nn.Module):
         return self.out_dim
 
     def forward(self, inputs):
-        x = inputs["input"]["image"]
-        feats = self.featurizer.forward_features(x)
+        pixel_values = inputs["input"]["image"]
 
-        if isinstance(feats, (list, tuple)):
-            feats = feats[-1]
-
-        if feats.ndim != 3:
-            raise ValueError(f"Unexpected feature shape: {feats.shape}")
-
-        # if feats.shape[1] > 1:
-        #     feats = feats[:, 1:, :]
-
+        if isinstance(pixel_values, torch.Tensor):
+            dual_inputs = self._tensor_batch_to_dual_dict(pixel_values)
+        elif isinstance(pixel_values, dict):
+            dual_inputs = pixel_values
+        else:
+            ...
+        feats = self.backbone(dual_inputs)
         feats = self.proj(feats)
 
         b, n, _ = feats.shape

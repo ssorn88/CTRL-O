@@ -29,6 +29,8 @@ _EXTRA_CLASS_TO_MODULE_MAP = {
     "ClipImageModel": "clip",
     "ClipTextModel": "clip",
     "ClipFeatureExtractor": "clip",
+    "openvla_dinosiglip_local": "openvla_dinosiglip_local",
+
 }
 
 

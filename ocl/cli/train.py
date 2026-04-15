@@ -180,7 +180,11 @@ def train(config: TrainingConfig):
     ocl.cli.cli_utils.set_torch_optimizations(enable=True)
 
     model = build_model_from_config(config)
+    print("===== DEBUG FEATURE EXTRACTOR =====")
+    print(type(model.models.feature_extractor.backbone))
+    print(model.models.feature_extractor.backbone.embed_dim)
 
+    print("===================================")
     # [새로 추가할 부분] 로드된 모델 컴포넌트들을 터미널에 출력해서 확인
     # =====================================================================
     print("\n" + "=" * 50)
